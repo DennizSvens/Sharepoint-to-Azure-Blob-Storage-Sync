@@ -1,0 +1,5 @@
+myenv/
+.env
+*.key
+*.crt
+*.pem
