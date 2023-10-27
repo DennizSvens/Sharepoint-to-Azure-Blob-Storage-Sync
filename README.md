@@ -5,10 +5,10 @@ This script is intended to synchronize files from Sharepoint to Azure Blob Stora
 
 ## Important Notes
 
-- This script was quickly created and may not be suitable for production use. Always test thoroughly in a non-production environment before deploying.
+- This script was designed for efficient synchronization and includes multi-threading support to improve performance. However, it's advisable to test thoroughly in a non-production environment before deploying.
 - The script requires an empty folder/map in the target Azure container. It writes `sp_last_modified` to the blob's metadata to track changes since Sharepoint does not appear to expose MD5 for data integrity checks.
-- The script's operations are currently single-threaded.
 - To sync multiple folders, utilize the config file (refer to config.example.json for an example setup) and set CONFIG_FILE in .env.
+- This script has been tested for use with serverless [Azure Function Apps](https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-python?tabs=asgi%2Capplication-level&pivots=python-mode-decorators) running Python, utilizing timer triggers for automatic synchronization.
 
 ## Prerequisites
 
@@ -73,12 +73,8 @@ The following environment variables are essential for the script's functioning:
 - **SHAREPOINT_TARGET_FOLDER**: The target folder in Sharepoint to sync (e.g., `Shared Documents/Folder1`).
 - **DRY_RUN**: If set to `True`, only the changes that would occur are printed without actual execution.
 - **CONFIG_FILE**: If you need to sync multiple folders you can set this path to the config file that contains an array of AZURE_STORAGE_CONTAINER_NAME, AZURE_STORAGE_FOLDER_NAME, SHAREPOINT_SITE ,SHAREPOINT_TARGET_FOLDER
-
+- **MAX_WORKERS**: The maximum number of threads to use for uploads. Defaults to 1. Increase this number to improve performance. Optimal performance is typically seen with 5-10 threads.
 
 ## Contributions
 
 Contributions to improve this script are welcome. Please fork the repository, make your changes, and submit a pull request.
-
-## Disclaimer
-
-This script is not production-ready. Use at your own risk.

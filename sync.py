@@ -5,7 +5,8 @@ from loguru import logger
 from decouple import config
 import json
 import pandas as pd
-
+from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 
 # Load environment variables
 AZURE_AD_CLIENT_ID = config("AZURE_AD_CLIENT_ID")
@@ -20,6 +21,7 @@ SHAREPOINT_SITE = config("SHAREPOINT_SITE")
 SHAREPOINT_TARGET_FOLDER = config("SHAREPOINT_TARGET_FOLDER")
 DRY_RUN = config("DRY_RUN", cast=bool)
 CONFIG_FILE = config("CONFIG_FILE", default=None)
+MAX_WORKERS = config("MAX_WORKERS", cast=int, default=1)
 
 def load_and_validate_config():
     if CONFIG_FILE:
@@ -190,17 +192,33 @@ class SyncManager:
                 changes.append({"OPERATION": DELETE, "SOURCE": azure_file, "TARGET": azure_file, "FILE": azure_file})
 
         return changes
+    def upload_change(self, change):
+        logger.info("Uploading: {0}".format(change["SOURCE"]))
+        change["FILE"].upload_to_blob(self.container_client)
+
+    def update_change(self, change):
+        logger.info("Updating: {0}".format(change["SOURCE"]))
+        change["FILE"].upload_to_blob(self.container_client, overwrite=True)
+
+    def delete_change(self, change):
+        logger.info("Deleting: {0}".format(change["SOURCE"]))
+        change["FILE"].delete_blob(self.container_client)
     def execute_changes(self, changes):
-        for change in changes:
-            if change["OPERATION"] == UPLOAD:
-                logger.info("Uploading: {0}".format(change["SOURCE"]))
-                change["FILE"].upload_to_blob(self.container_client)
-            elif change["OPERATION"] == UPDATE:
-                logger.info("Updating: {0}".format(change["SOURCE"]))
-                change["FILE"].upload_to_blob(self.container_client, overwrite=True)
-            elif change["OPERATION"] == DELETE:
-                logger.info("Deleting: {0}".format(change["SOURCE"]))
-                change["FILE"].delete_blob(self.container_client)
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = []
+                for change in changes:
+                    if change["OPERATION"] == UPLOAD:
+                        futures.append(executor.submit(self.upload_change, change))
+                    elif change["OPERATION"] == UPDATE:
+                        futures.append(executor.submit(self.update_change, change))
+                    elif change["OPERATION"] == DELETE:
+                        futures.append(executor.submit(self.delete_change, change))
+
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        logger.error(f"An error occurred during execution: {e}")
 
     def print_changes(self, changes):
         df = pd.DataFrame(changes)
