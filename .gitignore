@@ -3,3 +3,4 @@ myenv/
 *.key
 *.crt
 *.pem
+config.json

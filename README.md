@@ -8,6 +8,7 @@ This script is intended to synchronize files from Sharepoint to Azure Blob Stora
 - This script was quickly created and may not be suitable for production use. Always test thoroughly in a non-production environment before deploying.
 - The script requires an empty folder/map in the target Azure container. It writes `sp_last_modified` to the blob's metadata to track changes since Sharepoint does not appear to expose MD5 for data integrity checks.
 - The script's operations are currently single-threaded.
+- To sync multiple folders, utilize the config file (refer to config.example.json for an example setup) and set CONFIG_FILE in .env.
 
 ## Prerequisites
 
@@ -71,7 +72,7 @@ The following environment variables are essential for the script's functioning:
 - **SHAREPOINT_SITE**: The specific Sharepoint site you want to synchronize (e.g., `/sites/yoursharepointsite/`).
 - **SHAREPOINT_TARGET_FOLDER**: The target folder in Sharepoint to sync (e.g., `Shared Documents/Folder1`).
 - **DRY_RUN**: If set to `True`, only the changes that would occur are printed without actual execution.
-
+- **CONFIG_FILE**: If you need to sync multiple folders you can set this path to the config file that contains an array of AZURE_STORAGE_CONTAINER_NAME, AZURE_STORAGE_FOLDER_NAME, SHAREPOINT_SITE ,SHAREPOINT_TARGET_FOLDER
 
 
 ## Contributions

@@ -3,6 +3,7 @@ from office365.sharepoint.client_context import ClientContext
 from azure.storage.blob import BlobServiceClient
 from loguru import logger
 from decouple import config
+import json
 import pandas as pd
 
 
@@ -18,6 +19,39 @@ SHAREPOINT_BASE = config("SHAREPOINT_BASE")
 SHAREPOINT_SITE = config("SHAREPOINT_SITE")
 SHAREPOINT_TARGET_FOLDER = config("SHAREPOINT_TARGET_FOLDER")
 DRY_RUN = config("DRY_RUN", cast=bool)
+CONFIG_FILE = config("CONFIG_FILE", default=None)
+
+def load_and_validate_config():
+    if CONFIG_FILE:
+        with open(CONFIG_FILE, 'r') as f:
+            logger.info("Loading configuration from file: {0}".format(CONFIG_FILE))
+            loaded_configs = json.load(f)
+    else:
+        loaded_configs = [{
+            "AZURE_STORAGE_CONTAINER_NAME": AZURE_STORAGE_CONTAINER_NAME,
+            "AZURE_STORAGE_FOLDER_NAME": AZURE_STORAGE_FOLDER_NAME,
+            "SHAREPOINT_SITE": SHAREPOINT_SITE,
+            "SHAREPOINT_TARGET_FOLDER": SHAREPOINT_TARGET_FOLDER
+        }]
+
+    # List of required parameters for the configuration
+    required_params = [
+        "AZURE_STORAGE_CONTAINER_NAME", 
+        "AZURE_STORAGE_FOLDER_NAME", 
+        "SHAREPOINT_SITE", 
+        "SHAREPOINT_TARGET_FOLDER"
+    ]
+
+    # Validate each configuration entry
+    for conf in loaded_configs:
+        for param in required_params:
+            if param not in conf:
+                raise ValueError(f"Missing required parameter '{param}' in configuration.")
+    
+    return loaded_configs
+
+# Call the function and assign the result to CONFIGS
+CONFIGS = load_and_validate_config()
 
 
 # Constants
@@ -38,20 +72,21 @@ class File:
 
     
 class SharepointFile (File):
-    def __init__(self, path, target):
+    def __init__(self, path, target, config):
         super().__init__(path, target)
+        self.config = config
         logger.debug("Sharepoint File initialized: {0}".format(path))
     def __str__(self):
         return self.folder_path()
     def __repr__(self):
         return self.__str__()
     def folder_path(self):
-        return self.path.replace(SHAREPOINT_TARGET_FOLDER, "").replace(SHAREPOINT_SITE,"")
+        return self.path.replace(self.config["SHAREPOINT_TARGET_FOLDER"], "").replace(self.config["SHAREPOINT_SITE"],"")
     def get_binary_stream(self):
         file = self.target.get().execute_query()
         return file.read()
     def azure_target_path(self):
-        return AZURE_STORAGE_FOLDER_NAME + self.folder_path()
+        return self.config["AZURE_STORAGE_FOLDER_NAME"] + self.folder_path()
     def get_modified_date(self):
         return self.target.properties['TimeLastModified'].strftime('%Y-%m-%d %H:%M:%S')
     def upload_to_blob(self, container_client, overwrite=False):  # Pass the container_client here
@@ -73,7 +108,8 @@ class AzureFile (File):
 
 
 class SyncManager:
-    def __init__(self):
+    def __init__(self, config):
+        self.config = config
         self.ctx = None
         self.blob_service_client = None
         self.container_client = None
@@ -82,7 +118,7 @@ class SyncManager:
 
     def connect_to_sharepoint(self):
         try:
-            self.ctx = ClientContext(SHAREPOINT_BASE + SHAREPOINT_SITE).with_client_certificate(**{
+            self.ctx = ClientContext(SHAREPOINT_BASE + self.config['SHAREPOINT_SITE']).with_client_certificate(**{
                 "tenant": AZURE_AD_TENANT_ID,
                 "client_id": AZURE_AD_CLIENT_ID,
                 "cert_path": AZURE_AD_CERTIFICATE_PATH,
@@ -97,7 +133,7 @@ class SyncManager:
     def connect_to_azure(self):
         try:
             self.blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
-            self.container_client = self.blob_service_client.get_container_client(AZURE_STORAGE_CONTAINER_NAME)
+            self.container_client = self.blob_service_client.get_container_client(self.config['AZURE_STORAGE_CONTAINER_NAME'])
             container_exists = self.container_client.exists()
             if container_exists:
                 logger.info("Connected to Azure: {0}".format(self.container_client.url))
@@ -115,7 +151,7 @@ class SyncManager:
       self.ctx.load(files)
       self.ctx.execute_query()
       for file in files:
-          sharepoint_file = SharepointFile(file.properties["ServerRelativeUrl"], file)
+          sharepoint_file = SharepointFile(file.properties["ServerRelativeUrl"], file, self.config)
           relative_file_url_arr.append(sharepoint_file)
       if RECURSIVE:
           folders = folder.folders
@@ -137,9 +173,9 @@ class SyncManager:
       return relative_file_url_arr
     
     def detect_changes(self):
-        sharepoint_folder_url = SHAREPOINT_SITE + SHAREPOINT_TARGET_FOLDER
+        sharepoint_folder_url = self.config['SHAREPOINT_SITE'] + self.config['SHAREPOINT_TARGET_FOLDER']
         sharepoint_files = self.get_sharepoint_files_recursive(sharepoint_folder_url)
-        azure_files = self.get_azure_files_recursive(AZURE_STORAGE_FOLDER_NAME)
+        azure_files = self.get_azure_files_recursive(self.config['AZURE_STORAGE_FOLDER_NAME'])
 
         changes = []
         for sharepoint_file in sharepoint_files:
@@ -170,12 +206,13 @@ class SyncManager:
         df = pd.DataFrame(changes)
         print(df.to_string(index=False))
 
-manager = SyncManager()
-changes = manager.detect_changes()
-manager.print_changes(changes)
-if not DRY_RUN and len(changes) > 0:
-    logger.info("Executing changes...")
-    manager.execute_changes(changes)
-    logger.info("Changes executed.")
-else:
-    logger.info("No changes to execute.")
+for conf in CONFIGS:
+    manager = SyncManager(conf)
+    changes = manager.detect_changes()
+    manager.print_changes(changes)
+    if not DRY_RUN and len(changes) > 0:
+        logger.info("Executing changes...")
+        manager.execute_changes(changes)
+        logger.info("Changes executed.")
+    else:
+        logger.info("No changes to execute.")

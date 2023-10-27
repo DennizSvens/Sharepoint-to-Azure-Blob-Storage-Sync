@@ -1,0 +1,14 @@
+[
+  {
+    "AZURE_STORAGE_CONTAINER_NAME": "target_container_1",
+    "AZURE_STORAGE_FOLDER_NAME": "target_folder_1",
+    "SHAREPOINT_SITE": "/sites/site_1/",
+    "SHAREPOINT_TARGET_FOLDER": "folder_1"
+  },
+  {
+    "AZURE_STORAGE_CONTAINER_NAME": "target_container_2",
+    "AZURE_STORAGE_FOLDER_NAME": "target_folder_2",
+    "SHAREPOINT_SITE": "/sites/site_2/",
+    "SHAREPOINT_TARGET_FOLDER": "folder_2"
+  }
+]
